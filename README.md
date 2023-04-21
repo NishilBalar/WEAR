@@ -13,7 +13,7 @@ Though research has shown the complementarity of camera- and inertial-based data
 Please follow instructions mentioned in the [INSTALL.md](/Install.md) file.
 
 ## Download
-The full dataset can be downloaded via https://bit.ly/wear_dataset
+The full dataset can be downloaded via [this link](https://bit.ly/wear_dataset)
 
 The download folder is divided into 3 subdirectories
 - **annotations (> 1MB)**: JSON-files containing annotations per-subject using the THUMOS14-style
