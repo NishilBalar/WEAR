@@ -26,7 +26,7 @@ from utils.os_utils import Logger, load_config
 import matplotlib.pyplot as plt
 from camera_baseline.actionformer.main import run_actionformer
 from camera_baseline.tridet.main import run_tridet
-
+from camera_baseline.temporal.main import run_temporal
 
 def main(args):
     if args.neptune:
@@ -81,9 +81,11 @@ def main(args):
         if config['name'] == 'deepconvlstm' or config['name'] == 'attendanddiscriminate':
             t_losses, v_losses, v_mAP, v_mAP_post, v_preds, v_preds_post, v_gt = run_inertial_network(train_sbjs, val_sbjs, config, log_dir, args.ckpt_freq, args.resume, rng_generator, run)
         elif config['name'] == 'actionformer':
-            t_losses, v_losses, v_mAP, v_mAP_post, v_preds, v_preds_post, v_gt = run_actionformer(config, log_dir, args.ckpt_freq, args.resume, rng_generator, run)
+            t_losses, v_losses, v_mAP, v_mAP_post, v_preds, v_preds_post, v_gt = run_actionformer(config, log_dir, args.ckpt_freq, args.resume, rng_generator, run, i)
         elif config['name'] == 'tridet':
-            t_losses, v_losses, v_mAP, v_mAP_post, v_preds, v_preds_post, v_gt = run_tridet(config, log_dir, args.ckpt_freq, args.resume, rng_generator, run)
+            t_losses, v_losses, v_mAP, v_mAP_post, v_preds, v_preds_post, v_gt = run_tridet(config, log_dir, args.ckpt_freq, args.resume, rng_generator, run, i)
+        elif config['name'] == 'temporal':
+            t_losses, v_losses, v_mAP, v_mAP_post, v_preds, v_preds_post, v_gt = run_temporal(config, log_dir, args.ckpt_freq, args.resume, rng_generator, run)
 
         # unprocessed results
         conf_mat = confusion_matrix(v_gt, v_preds, normalize='true') #shape: (19,19)

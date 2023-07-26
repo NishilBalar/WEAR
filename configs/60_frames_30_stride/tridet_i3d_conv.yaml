@@ -9,8 +9,9 @@ anno_json: [
   'data/wear/annotations/wear_split_2.json',
   'data/wear/annotations/wear_split_3.json'
 ]
+
 dataset: {
-  feat_folder: ./data/wear/processed/combined_features/60_frames_30_stride,
+  feat_folder: ./data/wear/processed/i3d_conv_features/60_frames_30_stride,
   sens_folder: ./data/wear/raw/inertial,
   include_null: False,
   sampling_rate: 50,
@@ -18,7 +19,7 @@ dataset: {
   file_ext: .npy,
   feat_stride: 30,
   num_frames: 60,
-  input_dim: 2648,
+  input_dim: 9728,
   num_classes: 18,
   downsample_rate: 1,
   max_seq_len: 2304,
