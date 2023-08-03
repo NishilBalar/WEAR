@@ -25,13 +25,14 @@ from utils.data_utils import label_dict
 from utils.os_utils import Logger, load_config
 import matplotlib.pyplot as plt
 from camera_baseline.actionformer.main import run_actionformer
-
+from camera_baseline.tridet.main import run_tridet
+from camera_baseline.temporal.main import run_temporal
 
 def main(args):
     if args.neptune:
         run = neptune.init_run(
-        project=None,
-        api_token=None
+        project="nishil007/Wear",
+        api_token="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiJlNzlhZTIzYi1lM2FlLTRkZGEtOTE1Mi1iOTc2ZTA5ZDg3OTQifQ==",
         )
     else:
         run = None
@@ -41,13 +42,14 @@ def main(args):
     config['devices'] = [args.gpu]
 
     ts = datetime.datetime.fromtimestamp(int(time.time()))
-    log_dir = os.path.join('logs', config['name'], str(ts))
-    sys.stdout = Logger(os.path.join(log_dir, 'log.txt'))
+    formatted_ts = ts.strftime('%Y-%m-%d_%H-%M-%S')
+    log_dir = os.path.join('logs', config['name'] , str(formatted_ts))
+    sys.stdout = Logger(os.path.join(log_dir, 'log.txt')) #to save all training logs
 
     # save the current cfg
     with open(os.path.join(log_dir, 'cfg.txt'), 'w') as fid:
         pprint(config, stream=fid)
-        fid.flush()
+        fid.flush() #to save specific configuration which being used
     
     if args.neptune:
         run['eval_type'] = args.eval_type
@@ -71,20 +73,24 @@ def main(args):
 
         print('Split {} / {}'.format(i + 1, len(config['anno_json'])))
         if args.eval_type == 'split':
-            name = 'split_' + str(i)
+            name = 'split_' + str(i) #ex: 'split_0'
         elif args.eval_type == 'loso':
             name = 'sbj_' + str(i)
-        config['dataset']['json_file'] = anno_split
+        config['dataset']['json_file'] = anno_split #ex: 'data/wear/annotations/wear_split_1.json'
 
         if config['name'] == 'deepconvlstm' or config['name'] == 'attendanddiscriminate':
             t_losses, v_losses, v_mAP, v_mAP_post, v_preds, v_preds_post, v_gt = run_inertial_network(train_sbjs, val_sbjs, config, log_dir, args.ckpt_freq, args.resume, rng_generator, run)
         elif config['name'] == 'actionformer':
-            t_losses, v_losses, v_mAP, v_mAP_post, v_preds, v_preds_post, v_gt = run_actionformer(config, log_dir, args.ckpt_freq, args.resume, rng_generator, run)
+            t_losses, v_losses, v_mAP, v_mAP_post, v_preds, v_preds_post, v_gt = run_actionformer(config, log_dir, args.ckpt_freq, args.resume, rng_generator, run, i)
+        elif config['name'] == 'tridet':
+            t_losses, v_losses, v_mAP, v_mAP_post, v_preds, v_preds_post, v_gt = run_tridet(config, log_dir, args.ckpt_freq, args.resume, rng_generator, run, i)
+        elif config['name'] == 'temporal':
+            t_losses, v_losses, v_mAP, v_mAP_post, v_preds, v_preds_post, v_gt = run_temporal(config, log_dir, args.ckpt_freq, args.resume, rng_generator, run)
 
         # unprocessed results
-        conf_mat = confusion_matrix(v_gt, v_preds, normalize='true')
+        conf_mat = confusion_matrix(v_gt, v_preds, normalize='true') #shape: (19,19)
         v_acc = conf_mat.diagonal()/conf_mat.sum(axis=1)
-        v_prec = precision_score(v_gt, v_preds, average=None, zero_division=1)
+        v_prec = precision_score(v_gt, v_preds, average=None, zero_division=1) #shape (19,)
         v_rec = recall_score(v_gt, v_preds, average=None, zero_division=1)
         v_f1 = f1_score(v_gt, v_preds, average=None, zero_division=1)
         
@@ -150,7 +156,7 @@ def main(args):
             run['conf_matrices'].append(_, name=name + '_postprocessed')
 
     # final unprocessed results across all splits
-    conf_mat = confusion_matrix(all_v_gt, all_v_pred, normalize='true')
+    conf_mat = confusion_matrix(all_v_gt, all_v_pred, normalize='true') #shape: (19,19)
     v_acc = conf_mat.diagonal()/conf_mat.sum(axis=1)
     v_prec = precision_score(all_v_gt, all_v_pred, average=None, zero_division=1)
     v_rec = recall_score(all_v_gt, all_v_pred, average=None, zero_division=1)
@@ -217,10 +223,10 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', default='./configs/120_frames_60_stride/deepconvlstm_short.yaml')
+    parser.add_argument('--config', default='./configs/120_frames_60_stride/tridet_combined.yaml')
     parser.add_argument('--eval_type', default='split')
     parser.add_argument('--neptune', default=False, type=bool) 
-    parser.add_argument('--seed', default=42, type=int)       
+    parser.add_argument('--seed', default=1, type=int)        
     parser.add_argument('--ckpt-freq', default=-1, type=int)
     parser.add_argument('--resume', default='', type=str)
     parser.add_argument('--gpu', default='cuda:0', type=str)

@@ -1,18 +1,18 @@
 import os
 import time
-
 from copy import deepcopy
 
 import torch
-import torch.optim as optim
 import torch.backends.cudnn as cudnn
+import torch.optim as optim
 
 from .lr_schedulers import LinearWarmupMultiStepLR, LinearWarmupCosineAnnealingLR
-from ..modeling import MaskedConv1D, MaskedConv2D, Scale, AffineDropPath, LayerNorm
+from ..modeling import MaskedConv1D, Scale, AffineDropPath, LayerNorm
 
 
 ################################################################################
-def save_checkpoint(state, is_best, file_folder, file_name='checkpoint.pth.tar'):
+def save_checkpoint(state, is_best, file_folder,
+                    file_name='checkpoint.pth.tar'):
     """save checkpoint to file"""
     if not os.path.exists(file_folder):
         os.mkdir(file_folder)
@@ -38,13 +38,13 @@ def make_optimizer(model, optimizer_config):
     # see https://github.com/karpathy/minGPT/blob/master/mingpt/model.py#L134
     decay = set()
     no_decay = set()
-    whitelist_weight_modules = (torch.nn.Linear, torch.nn.Conv1d, MaskedConv1D, MaskedConv2D)
+    whitelist_weight_modules = (torch.nn.Linear, torch.nn.Conv1d, MaskedConv1D)
     blacklist_weight_modules = (LayerNorm, torch.nn.GroupNorm)
 
     # loop over all modules / params
     for mn, m in model.named_modules():
         for pn, p in m.named_parameters():
-            fpn = '%s.%s' % (mn, pn) if mn else pn # full param name
+            fpn = '%s.%s' % (mn, pn) if mn else pn  # full param name
             if pn.endswith('bias'):
                 # all biases will not be decayed
                 no_decay.add(fpn)
@@ -65,10 +65,10 @@ def make_optimizer(model, optimizer_config):
     param_dict = {pn: p for pn, p in model.named_parameters()}
     inter_params = decay & no_decay
     union_params = decay | no_decay
-    assert len(inter_params) == 0, "parameters %s made it into both decay/no_decay sets!" % (str(inter_params), )
+    assert len(inter_params) == 0, "parameters %s made it into both decay/no_decay sets!" % (str(inter_params),)
     assert len(param_dict.keys() - union_params) == 0, \
         "parameters %s were not separated into either decay/no_decay set!" \
-        % (str(param_dict.keys() - union_params), )
+        % (str(param_dict.keys() - union_params),)
 
     # create the pytorch optimizer object
     optim_groups = [
@@ -93,7 +93,12 @@ def make_optimizer(model, optimizer_config):
     return optimizer
 
 
-def make_scheduler(optimizer, optimizer_config, num_iters_per_epoch, last_epoch=-1):
+def make_scheduler(
+        optimizer,
+        optimizer_config,
+        num_iters_per_epoch,
+        last_epoch=-1
+):
     """create scheduler
     return a supported scheduler
     All scheduler returned by this function should step every iteration
@@ -106,6 +111,9 @@ def make_scheduler(optimizer, optimizer_config, num_iters_per_epoch, last_epoch=
         warmup_epochs = optimizer_config["warmup_epochs"]
         warmup_steps = warmup_epochs * num_iters_per_epoch
 
+        # get eta min
+        eta_min = optimizer_config["eta_min"]
+
         # with linear warmup: call our custom schedulers
         if optimizer_config["schedule_type"] == "cosine":
             # Cosine
@@ -113,6 +121,7 @@ def make_scheduler(optimizer, optimizer_config, num_iters_per_epoch, last_epoch=
                 optimizer,
                 warmup_steps,
                 max_steps,
+                eta_min=eta_min,
                 last_epoch=last_epoch
             )
 
@@ -133,12 +142,16 @@ def make_scheduler(optimizer, optimizer_config, num_iters_per_epoch, last_epoch=
         max_epochs = optimizer_config["epochs"]
         max_steps = max_epochs * num_iters_per_epoch
 
+        # get eta min
+        eta_min = optimizer_config["eta_min"]
+
         # without warmup: call default schedulers
         if optimizer_config["schedule_type"] == "cosine":
             # step per iteration
             scheduler = optim.lr_scheduler.CosineAnnealingLR(
                 optimizer,
                 max_steps,
+                eta_min=eta_min,
                 last_epoch=last_epoch
             )
 
@@ -148,7 +161,7 @@ def make_scheduler(optimizer, optimizer_config, num_iters_per_epoch, last_epoch=
             scheduler = optim.lr_scheduler.MultiStepLR(
                 optimizer,
                 steps,
-                gamma=schedule_config["gamma"], #?????????????
+                gamma=schedule_config["gamma"],
                 last_epoch=last_epoch
             )
         else:
@@ -161,6 +174,7 @@ class AverageMeter(object):
     """Computes and stores the average and current value.
     Used to compute dataset stats from mini-batches
     """
+
     def __init__(self):
         self.initialized = False
         self.val = None
@@ -214,7 +228,14 @@ class ModelEma(torch.nn.Module):
 
 
 ################################################################################
-def train_one_epoch(train_loader, model, optimizer, scheduler, model_ema = None, clip_grad_l2norm = -1):
+def train_one_epoch(
+        train_loader,
+        model,
+        optimizer,
+        scheduler,
+        model_ema=None,
+        clip_grad_l2norm=-1
+):
     """Training the model for one epoch"""
     # set up meters
     batch_time = AverageMeter()
@@ -224,19 +245,19 @@ def train_one_epoch(train_loader, model, optimizer, scheduler, model_ema = None,
     # switch to train mode
     model.train()
 
-    # main training loop
     start = time.time()
     for iter_idx, video_list in enumerate(train_loader, 0):
-        #video_list: batch of 2 subjects example: [{'video_id': 'sbj_16', 'feats': tensor([[1.6000e+01,...826e-02]]), 'segments': tensor([[-1.9995e-01...050e+03]]), 'labels': tensor([17, 16, 16, ..., 10,  6]), 'fps': 60.0, 'duration': 3510.0, 'feat_stride': 30, 'feat_num_frames': 60}, {'video_id': 'sbj_13', 'feats': tensor([[1.3000e+01,...903e-02]]), 'segments': tensor([[  50.7998, ...78.6001]]), 'labels': tensor([17, 17, 17, ..., 14, 14]), 'fps': 60.0, 'duration': 3978.0, 'feat_stride': 30, 'feat_num_frames': 60}]
-        #'feats' have processed features of combined data (both video and sensor)
         # zero out optim
         optimizer.zero_grad(set_to_none=True)
         # forward / backward the model
-        losses = model(video_list) # for training gives 3 types of losses 1) classification loss 2) regression loss 3) final losses
+        losses = model(video_list)
         losses['final_loss'].backward()
         # gradient cliping (to stabilize training if necessary)
         if clip_grad_l2norm > 0.0:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), clip_grad_l2norm)
+            torch.nn.utils.clip_grad_norm_(
+                model.parameters(),
+                clip_grad_l2norm
+            )
         # step optimizer / scheduler
         optimizer.step()
         scheduler.step()
@@ -245,9 +266,10 @@ def train_one_epoch(train_loader, model, optimizer, scheduler, model_ema = None,
             model_ema.update(model)
 
         # measure elapsed time (sync all kernels)
-        #torch.cuda.synchronize() #?????????
+        #torch.cuda.synchronize()
         batch_time.update((time.time() - start))
         start = time.time()
+
 
         # track all losses
         for key, value in losses.items():
@@ -256,18 +278,21 @@ def train_one_epoch(train_loader, model, optimizer, scheduler, model_ema = None,
                 losses_tracker[key] = AverageMeter()
             # update
             losses_tracker[key].update(value.item())
-    
+
     return losses_tracker['final_loss'].avg
 
 
-def valid_one_epoch(val_loader, model):
+def valid_one_epoch(
+        val_loader,
+        model
+):
     """Test the model on the validation set"""
     # switch to evaluate mode
     model.eval()
     # dict for results (for our evaluation code)
     results = {
         'video-id': [],
-        't-start' : [],
+        't-start': [],
         't-end': [],
         'label': [],
         'score': []
@@ -275,11 +300,12 @@ def valid_one_epoch(val_loader, model):
     losses_tracker = {}
 
     # loop over validation set
-    for _, video_list in enumerate(val_loader, 0): #ex: video_list with batch size = 1; [{'video_id': 'sbj_0', 'feats': tensor([[0.0000, 0.0... 0.0096]]), 'segments': tensor([[8.4000e-01,...700e+03]]), 'labels': tensor([ 0,  0,  0, ..., 12, 10]), 'fps': 60.0, 'duration': 2794.5, 'feat_stride': 30, 'feat_num_frames': 60}]
+    for _, video_list in enumerate(val_loader, 0):
         # forward the model (wo. grad)
         with torch.no_grad():
-            losses, output = model(video_list) #output: [{'video_id': 'sbj_0', 'segments': tensor([[ 435.3362, ...92.4595]]), 'scores': tensor([0.0442, 0.04..., 0.0228]), 'labels': tensor([16, 17, 17, ...,  8, 17])}]
-            # unpack the results into ANet format
+            losses, output = model(video_list)
+
+            # upack the results into ANet format
             num_vids = len(output)
             for vid_idx in range(num_vids):
                 if output[vid_idx]['segments'].shape[0] > 0:
@@ -291,6 +317,7 @@ def valid_one_epoch(val_loader, model):
                     results['t-end'].append(output[vid_idx]['segments'][:, 1])
                     results['label'].append(output[vid_idx]['labels'])
                     results['score'].append(output[vid_idx]['scores'])
+
             # track all losses
             for key, value in losses.items():
                 # init meter if necessary
@@ -304,5 +331,6 @@ def valid_one_epoch(val_loader, model):
     results['t-end'] = torch.cat(results['t-end']).numpy()
     results['label'] = torch.cat(results['label']).numpy()
     results['score'] = torch.cat(results['score']).numpy()
+
 
     return losses_tracker['final_loss'].avg, results
